@@ -9,6 +9,7 @@ import (
 	"github.com/joho/godotenv"
 
 	appdb "security-monitoring/internal/db"
+	"security-monitoring/internal/httpxscan"
 	"security-monitoring/internal/subdomainenum"
 )
 
@@ -22,10 +23,13 @@ func main() {
 	defer pool.Close()
 
 	repo := subdomainenum.NewPGRepository(pool)
-	svc := subdomainenum.NewService(repo)
+
+	subdomainSvc := subdomainenum.NewService(repo)
+	httpxSvc := httpxscan.NewService(repo) // usa o mesmo repo para listar hostnames
 
 	mux := http.NewServeMux()
-	subdomainenum.RegisterRoutes(mux, svc)
+	subdomainenum.RegisterRoutes(mux, subdomainSvc)
+	httpxscan.RegisterRoutes(mux, httpxSvc)
 
 	log.Println("Servidor rodando em http://localhost:3000")
 	if err := http.ListenAndServe(":3000", mux); err != nil {

@@ -6,22 +6,26 @@ import (
 )
 
 func RegisterRoutes(mux *http.ServeMux, svc Service) {
-	// Injeta o service via closure
 	mux.HandleFunc("/api/v1/subdomain-enum", func(w http.ResponseWriter, r *http.Request) {
-		subdomainEnumHandler(w, r, svc)
+		switch r.Method {
+		case http.MethodPost:
+			subdomainEnumPostHandler(w, r, svc)
+		case http.MethodGet:
+			subdomainEnumGetHandler(w, r, svc)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 }
 
-func subdomainEnumHandler(w http.ResponseWriter, r *http.Request, svc Service) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+func subdomainEnumPostHandler(w http.ResponseWriter, r *http.Request, svc Service) {
 	var req Request
 	if r.Body != nil {
 		defer r.Body.Close()
-		_ = json.NewDecoder(r.Body).Decode(&req) // body opcional
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if req.ApexDomain == "" {
+		req.ApexDomain = "tim.com.br"
 	}
 
 	status, body, contentType, err := svc.Enumerate(r.Context(), req.ApexDomain)
@@ -33,4 +37,15 @@ func subdomainEnumHandler(w http.ResponseWriter, r *http.Request, svc Service) {
 	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
+}
+
+func subdomainEnumGetHandler(w http.ResponseWriter, r *http.Request, svc Service) {
+	records, err := svc.GetAll(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(records)
 }

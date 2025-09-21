@@ -13,6 +13,7 @@ import (
 
 type Service interface {
 	Enumerate(ctx context.Context, apexDomain string) (status int, body []byte, contentType string, err error)
+	GetAll(ctx context.Context) ([]STRecord, error)
 }
 
 type DefaultService struct {
@@ -33,13 +34,11 @@ func (s *DefaultService) Enumerate(ctx context.Context, apexDomain string) (int,
 		return http.StatusInternalServerError, nil, "application/json", fmt.Errorf("missing SECURITYTRAILS_API_KEY")
 	}
 
-	// Monta a query no formato esperado pela SecurityTrails
 	payload := map[string]string{
 		"query": fmt.Sprintf("apex_domain = '%s'", apexDomain),
 	}
 	b, _ := json.Marshal(payload)
 
-	// Endpoint com query params fixos
 	url := fmt.Sprintf("https://api.securitytrails.com/v1/domains/list?apikey=%s&include_ips=true&scroll=true", apiKey)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
@@ -74,3 +73,6 @@ func (s *DefaultService) Enumerate(ctx context.Context, apexDomain string) (int,
 	return resp.StatusCode, respBody, ct, nil
 }
 
+func (s *DefaultService) GetAll(ctx context.Context) ([]STRecord, error) {
+	return s.repo.GetAllRecords(ctx)
+}
