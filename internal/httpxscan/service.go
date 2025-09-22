@@ -3,8 +3,7 @@ package httpxscan
 import (
 	"context"
 	"fmt"
-	"strings"
-	"log"
+	"strconv"
 
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
@@ -18,15 +17,16 @@ type HostnameSource interface {
 }
 
 type Service struct {
-	src HostnameSource
-	// você pode parametrizar threads, método, etc. no futuro
+	src  HostnameSource
+	repo HttpxRepository
+	// Você pode expor configs aqui (threads, timeout, etc.) se quiser
 }
 
-func NewService(src HostnameSource) *Service {
-	return &Service{src: src}
+func NewService(src HostnameSource, repo HttpxRepository) *Service {
+	return &Service{src: src, repo: repo}
 }
 
-// Run busca hostnames no banco, roda o httpx e imprime os resultados no terminal.
+// Run busca hostnames no banco e roda o httpx salvando os resultados na tabela httpx.
 func (s *Service) Run(ctx context.Context) error {
 	// 1) Carrega hostnames do banco
 	hosts, err := s.src.GetAllHostnames(ctx)
@@ -34,7 +34,7 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("get hostnames: %w", err)
 	}
 	if len(hosts) == 0 {
-		log.Println("[httpx] Nenhum hostname encontrado na tabela subdomain")
+		// nada a fazer
 		return nil
 	}
 
@@ -45,32 +45,24 @@ func (s *Service) Run(ctx context.Context) error {
 	opts := runner.Options{
 		Methods:         "GET",
 		InputTargetHost: goflags.StringSlice(hosts),
-		Threads:         10, // ajuste se quiser
-		HttpApiEndpoint: "localhost:31234", // conforme seu pedido
+		Threads:         10,
+		HttpApiEndpoint: "localhost:31234",
 		TechDetect: true,
 		OnResult: func(r runner.Result) {
+			// Ignora entradas com erro, conforme seu requisito
 			if r.Err != nil {
-				// fmt.Printf("[Err] %s: %s\n", r.Input, r.Err)
 				return
 			}
-			// fmt.Printf("[OK] %s -> %s (%d)\n", r.Input, r.Host, r.StatusCode)
-			fmt.Printf("Input: %s\n", r.Input)
-			fmt.Printf("Host: %s\n", r.Host)
-			fmt.Printf("Status: %d\n", r.StatusCode)
-			fmt.Printf("Title: %s\n", r.Title)
-			fmt.Printf("FinalURL: %s\n", r.FinalURL)
-			fmt.Printf("Location: %s\n", r.Location)
-			fmt.Printf("URL: %s\n", r.URL)
-
-			// Technologies pode vir vazia; cheque antes de indexar
-			if len(r.Technologies) > 0 {
-				// Juntar array em uma string legível
-				fmt.Printf("Technologies: %s\n", strings.Join(r.Technologies, ", "))
-			} else {
-				fmt.Println("Technologies: -")
+			rec := HttpxRecord{
+				Host:         r.Host,
+				Status:       strconv.Itoa(r.StatusCode), // sua coluna é TEXT
+				Title:        r.Title,
+				Location:     r.Location,
+				URL:          r.URL,
+				Technologies: r.Technologies,
 			}
-
-    		fmt.Println("===============================================")
+			// Salva cada resultado individualmente (simples). No futuro, podemos acumular e chamar SaveResults.
+			_ = s.repo.SaveResult(ctx, rec)
 		},
 	}
 
@@ -87,4 +79,8 @@ func (s *Service) Run(ctx context.Context) error {
 
 	httpxRunner.RunEnumeration()
 	return nil
+}
+
+func (s *Service) GetAll(ctx context.Context) ([]HttpxRecord, error) {
+	return s.repo.GetAll(ctx)
 }

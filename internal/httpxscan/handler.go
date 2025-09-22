@@ -1,20 +1,31 @@
 package httpxscan
 
 import (
+	"encoding/json"
 	"net/http"
 )
 
 func RegisterRoutes(mux *http.ServeMux, svc *Service) {
 	mux.HandleFunc("/api/v1/httpx", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		switch r.Method {
+		case http.MethodPost:
+			// dispara o scan
+			if err := svc.Run(r.Context()); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent) // 204
+		case http.MethodGet:
+			// busca dados no banco e retorna JSON
+			records, err := svc.GetAll(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(records)
+		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
 		}
-		// Executa o scan; não retorna corpo
-		if err := svc.Run(r.Context()); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent) // 204
 	})
 }

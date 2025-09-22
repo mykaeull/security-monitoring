@@ -23,9 +23,10 @@ func main() {
 	defer pool.Close()
 
 	repo := subdomainenum.NewPGRepository(pool)
+	httpxRepo := httpxscan.NewPGHttpxRepository(pool)
 
 	subdomainSvc := subdomainenum.NewService(repo)
-	httpxSvc := httpxscan.NewService(repo) // usa o mesmo repo para listar hostnames
+	httpxSvc := httpxscan.NewService(repo, httpxRepo)
 
 	mux := http.NewServeMux()
 	subdomainenum.RegisterRoutes(mux, subdomainSvc)
