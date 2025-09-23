@@ -9,14 +9,12 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service) {
 	mux.HandleFunc("/api/v1/httpx", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			// dispara o scan
 			if err := svc.Run(r.Context()); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			w.WriteHeader(http.StatusNoContent) // 204
+			w.WriteHeader(http.StatusNoContent)
 		case http.MethodGet:
-			// busca dados no banco e retorna JSON
 			records, err := svc.GetAll(r.Context())
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
