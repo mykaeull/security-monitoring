@@ -13,6 +13,7 @@ import (
 	"security-monitoring/internal/httpxscan"
 	"security-monitoring/internal/monitor"
 	"security-monitoring/internal/subdomainenum"
+	"security-monitoring/internal/nuclei"
 )
 
 func main() {
@@ -30,14 +31,16 @@ func main() {
 
 	// --- SubdomainEnum feature ---
 	subRepo := subdomainenum.NewPGRepository(pool)
-	httpxRepo := httpxscan.NewPGHttpxRepository(pool)
 	subSvc := subdomainenum.NewService(subRepo)
-
+	
 	// --- httpx feature ---
+	httpxRepo := httpxscan.NewPGHttpxRepository(pool)
 	httpxSvc := httpxscan.NewService(subRepo, httpxRepo)
-
+	
 	// --- Monitor feature ---
 	monitorSvc := monitor.NewService(domainSvc)
+
+	nucleiSvc := nuclei.NewNucleiService(httpxRepo)
 
 	// --- Router ---
 	mux := http.NewServeMux()
@@ -46,6 +49,7 @@ func main() {
 	subdomainenum.RegisterRoutes(mux, subSvc)
 	httpxscan.RegisterRoutes(mux, httpxSvc)
 	monitor.RegisterRoutes(mux, monitorSvc)
+	nuclei.RegisterRoutes(mux, nucleiSvc)
 
 	log.Println("Servidor rodando em http://localhost:3000")
 	if err := http.ListenAndServe(":3000", mux); err != nil {

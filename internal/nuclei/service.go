@@ -1,78 +1,61 @@
-package subdomainenum
+package nuclei
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"time"
+	"log"
+
+	nuclei "github.com/projectdiscovery/nuclei/v3/lib"
+	"github.com/projectdiscovery/nuclei/v3/pkg/output"
+	"security-monitoring/internal/httpxscan"
 )
 
-type Service interface {
-	Enumerate(ctx context.Context, apexDomain string) (status int, body []byte, contentType string, err error)
-	GetAll(ctx context.Context) ([]STRecord, error)
+type NucleiService struct {
+	repo httpxscan.HttpxRepository
 }
 
-type DefaultService struct {
-	httpClient *http.Client
-	repo       Repository
+func NewNucleiService(repo httpxscan.HttpxRepository) *NucleiService {
+	return &NucleiService{repo: repo}
 }
 
-func NewService(repo Repository) *DefaultService {
-	return &DefaultService{
-		httpClient: &http.Client{Timeout: 15 * time.Second},
-		repo:       repo,
-	}
-}
-
-func (s *DefaultService) Enumerate(ctx context.Context, apexDomain string) (int, []byte, string, error) {
-	apiKey := os.Getenv("SECURITYTRAILS_API_KEY")
-	if apiKey == "" {
-		return http.StatusInternalServerError, nil, "application/json", fmt.Errorf("missing SECURITYTRAILS_API_KEY")
-	}
-
-	payload := map[string]string{
-		"query": fmt.Sprintf("apex_domain = '%s'", apexDomain),
-	}
-	b, _ := json.Marshal(payload)
-
-	url := fmt.Sprintf("https://api.securitytrails.com/v1/domains/list?apikey=%s&include_ips=true&scroll=true", apiKey)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+func (s *NucleiService) Run(ctx context.Context) error {
+	records, err := s.repo.GetAll(ctx)
 	if err != nil {
-		return http.StatusInternalServerError, nil, "application/json", err
+		return fmt.Errorf("get records from db: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	var urls []string
+	for _, rec := range records {
+		urls = append(urls, rec.URL)
+	}
 
-	resp, err := s.httpClient.Do(req)
+	if len(urls) == 0 {
+		log.Println("[nuclei] Nenhuma URL encontrada para scan")
+		return nil
+	}
+
+	ne, err := nuclei.NewNucleiEngineCtx(ctx,
+		nuclei.WithTemplateFilters(nuclei.TemplateFilters{Tags: []string{"oast"}}),
+	)
 	if err != nil {
-		return http.StatusBadGateway, nil, "application/json", err
+		return fmt.Errorf("nuclei engine initialization failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer ne.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	ne.LoadTargets(urls, false)
+
+	err = ne.ExecuteWithCallback(func(result *output.ResultEvent) {
+		// Imprime os resultados no terminal
+		fmt.Printf("URL: %s\n", result.URL)
+		fmt.Printf("Template: %s\n", result.Template)
+		fmt.Printf("Info: %s\n", result.Info)
+		fmt.Printf("Matched: %s\n", result.Matched)
+		fmt.Println("=====================================")
+	})
+
 	if err != nil {
-		return http.StatusBadGateway, nil, "application/json", err
+		return fmt.Errorf("nuclei execution failed: %w", err)
 	}
 
-	ct := resp.Header.Get("Content-Type")
-	if ct == "" {
-		ct = "application/json"
-	}
-
-	var parsed STListResponse
-	if err := json.Unmarshal(respBody, &parsed); err == nil && len(parsed.Records) > 0 {
-		_ = s.repo.SaveRecords(ctx, parsed.Records)
-	}
-
-	return resp.StatusCode, respBody, ct, nil
-}
-
-func (s *DefaultService) GetAll(ctx context.Context) ([]STRecord, error) {
-	return s.repo.GetAllRecords(ctx)
+	return nil
 }
