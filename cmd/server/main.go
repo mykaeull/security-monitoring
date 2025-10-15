@@ -11,9 +11,10 @@ import (
 	appdb "security-monitoring/internal/db"
 	"security-monitoring/internal/domain"
 	"security-monitoring/internal/httpxscan"
+	"security-monitoring/internal/katana"
 	"security-monitoring/internal/monitor"
-	"security-monitoring/internal/subdomainenum"
 	"security-monitoring/internal/nuclei"
+	"security-monitoring/internal/subdomainenum"
 )
 
 func main() {
@@ -32,15 +33,21 @@ func main() {
 	// --- SubdomainEnum feature ---
 	subRepo := subdomainenum.NewPGRepository(pool)
 	subSvc := subdomainenum.NewService(subRepo)
-	
+
 	// --- httpx feature ---
 	httpxRepo := httpxscan.NewPGHttpxRepository(pool)
 	httpxSvc := httpxscan.NewService(subRepo, httpxRepo)
-	
+
+	// --- katana feature ---
+	katanaRepo := katana.NewPGRepository(pool)
+	katanaSvc := katana.NewKatanaService(httpxRepo, katanaRepo)
+
 	// --- Monitor feature ---
 	monitorSvc := monitor.NewService(domainSvc)
 
-	nucleiSvc := nuclei.NewNucleiService(httpxRepo)
+	// --- Nuclei feature ---
+	nucleiRepo := nuclei.NewPGRepository(pool)
+	nucleiSvc := nuclei.NewNucleiService(httpxRepo, nucleiRepo)
 
 	// --- Router ---
 	mux := http.NewServeMux()
@@ -49,6 +56,7 @@ func main() {
 	subdomainenum.RegisterRoutes(mux, subSvc)
 	httpxscan.RegisterRoutes(mux, httpxSvc)
 	monitor.RegisterRoutes(mux, monitorSvc)
+	katana.RegisterRoutes(mux, katanaSvc)
 	nuclei.RegisterRoutes(mux, nucleiSvc)
 
 	log.Println("Servidor rodando em http://localhost:3000")
